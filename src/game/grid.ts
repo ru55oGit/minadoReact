@@ -118,7 +118,7 @@ export function placeLettersRandomly(grid: MinadoGrid, word: string, exclude: Gr
   const next = grid.map((row) => row.map((cell) => ({ ...cell })));
   for (let i = 0; i < upper.length; i++) {
     const { r, c } = positions[i];
-    next[r][c] = { kind: "letter", letter: upper[i], state: "hidden" };
+    next[r][c] = { kind: "letter", letter: upper[i], sourceIndex: i, state: "hidden" };
   }
 
   for (let r = 0; r < size; r++) {

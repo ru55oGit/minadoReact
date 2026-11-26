@@ -26,6 +26,13 @@ export interface Cell {
   kind: CellKind;
   // Solo si kind === "letter".
   letter?: string;
+  // Solo si kind === "letter": posición de esa letra dentro de la palabra
+  // combinada que se usó para generar la grilla (TODAY_PUZZLE.clueWords
+  // unidas) — permite, al reclamarla, saber a qué pista pertenece y en
+  // qué lugar de ESA pista va (necesario desde que las 4 pistas viven en
+  // una sola grilla: el valor de la letra sola no alcanza para distinguir
+  // "la E de EDEN" de "la E de EVA").
+  sourceIndex?: number;
   state: CellState;
   // Solo si kind === "plain": cantidad de celdas de letra entre sus 8
   // vecinas — se calcula una sola vez al generar la grilla.

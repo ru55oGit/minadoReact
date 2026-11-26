@@ -156,8 +156,8 @@ export default function Home() {
           </Typography>
           <Typography sx={{ color: "rgba(255,255,255,0.85)", lineHeight: 1.7 }}>
             Minado es un buscaminas distinto: en vez de minas, lo que se esconde en la grilla son
-            letras. Cada día hay 4 tableros, y cada uno esconde una palabra-pista. Encontrá las 4
-            para armar la palabra final del día.
+            letras — las de 4 palabras-pista mezcladas en un solo tablero. Encontrá las letras de
+            cada pista para descubrirlas, y usalas para adivinar la palabra final del día.
           </Typography>
         </Box>
 
@@ -169,12 +169,11 @@ export default function Home() {
             Un buscaminas común, con el riesgo real de siempre: tocá una celda para revelarla. Si
             es simple, te muestra un número con la cantidad de letras escondidas entre sus
             vecinas, igual que la cuenta de minas del buscaminas de toda la vida. Pero si tocás
-            directo una celda de letra sin marcarla antes, es una bomba y perdés esa pista. Para
-            sumarla sin arriesgar, marcála con bandera (click derecho en computadora, o el modo
-            Bandera en el celular) — la grilla solo muestra la banderita, la letra aparece
-            recién en la lista de encontradas. En cualquier momento podés intentar adivinar esa
-            pista con las letras que ya tengas. Resolvé las 4 pistas y usalas para adivinar la
-            palabra final.
+            directo una celda de letra sin marcarla antes, es una bomba. Para sumarla sin
+            arriesgar, marcála con bandera (click derecho en computadora, o el modo Bandera en el
+            celular) — la grilla solo muestra la banderita, la letra baja a la tarjeta de su pista
+            correspondiente. Arrastrá esas letras para ordenarlas y descubrir cada palabra-pista, y
+            usalas para adivinar la palabra final, siempre en la misma pantalla.
           </Typography>
         </Box>
 
@@ -184,11 +183,11 @@ export default function Home() {
           </Typography>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
             <Box>
-              <Typography sx={{ color: "#fff", fontWeight: 700, mb: 0.25 }}>¿Puedo perder una pista?</Typography>
+              <Typography sx={{ color: "#fff", fontWeight: 700, mb: 0.25 }}>¿Puedo perder?</Typography>
               <Typography sx={{ color: "rgba(255,255,255,0.85)", lineHeight: 1.6, fontSize: 15 }}>
                 Sí: si tocás directo una celda de letra sin marcarla antes con bandera, es una
-                bomba y perdés esa pista — pasás a adivinarla con las letras que ya hayas
-                encontrado hasta ese momento.
+                bomba y ya no podés seguir destapando — pero igual podés intentar adivinar la
+                palabra final con las letras que hayas encontrado hasta ese momento.
               </Typography>
             </Box>
             <Box>

@@ -3,125 +3,121 @@ import { useNavigate } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
-import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
 import Layout from "../components/Layout";
 import Board from "../components/Board";
-import BombIcon from "../components/icons/BombIcon";
-import LetterSlots from "../components/LetterSlots";
+import MineIcon from "../components/icons/MineIcon";
+import ClassicFlagIcon from "../components/icons/ClassicFlagIcon";
+import DraggableLetters from "../components/DraggableLetters";
 import VirtualKeyboard from "../components/VirtualKeyboard";
 import HowToPlayCollapse from "../components/HowToPlayCollapse";
 import { useMinadoBoard } from "../hooks/useMinadoBoard";
 import { usePhysicalKeyboard } from "../hooks/usePhysicalKeyboard";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { GRID_SIZE } from "../game/grid";
 import { TODAY_PUZZLE } from "../data/dailyPuzzle";
-import { MinadoGrid } from "../game/types";
 import { buildShareText } from "../utils/shareText";
+import { getRecommendedBreakPoint, getSyllableBreakPoint } from "../utils/syllableBreak";
 
 const ACCENT = "#e74c3c";
 
-type ClueStatus = "pending" | "correct" | "wrong" | "passed";
-
-interface ClueResult {
-  word: string;
-  foundLetters: string[];
-  grid: MinadoGrid | null;
-  status: ClueStatus;
+// Las 4 palabras-pista viven ahora en UNA sola grilla (combinadas en un
+// solo string) — esto precalcula en qué rango de esa palabra combinada
+// cae cada pista, para poder separar después las letras encontradas por
+// pista a partir de su `sourceIndex` (ver types.ts/useMinadoBoard.ts).
+function buildClueRanges(words: string[]) {
+  let offset = 0;
+  return words.map((word) => {
+    const range = { start: offset, length: word.length };
+    offset += word.length;
+    return range;
+  });
 }
+
+const COMBINED_WORD = TODAY_PUZZLE.clueWords.join("");
+const CLUE_RANGES = buildClueRanges(TODAY_PUZZLE.clueWords);
 
 function normalize(word: string): string {
   return word.trim().toUpperCase();
 }
 
-function initialResults(): ClueResult[] {
-  return TODAY_PUZZLE.clueWords.map((word) => ({ word, foundLetters: [], grid: null, status: "pending" }));
-}
-
-type Stage = "select" | "board" | "finalGuess" | "done";
+type Stage = "play" | "done";
 
 export default function Game() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const [stage, setStage] = useState<Stage>("select");
-  const [results, setResults] = useState<ClueResult[]>(initialResults);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [stage, setStage] = useState<Stage>("play");
   const [finalCorrect, setFinalCorrect] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
   // En mobile no hay botón derecho — este toggle decide si un toque
   // revela o marca con bandera. En desktop el click derecho marca
-  // siempre, sin importar este modo (ver Board). Se resetea a "revelar"
-  // en cada pista nueva para no arrancar marcando por accidente.
+  // siempre, sin importar este modo (ver Board).
   const [flagMode, setFlagMode] = useState(false);
-
-  // --- Minitablero de la pista activa (solo relevante en stage "board") ---
-  const activeWord = activeIndex !== null ? TODAY_PUZZLE.clueWords[activeIndex] : TODAY_PUZZLE.clueWords[0];
-  const board = useMinadoBoard(activeWord);
+  // El teclado virtual se abre/cierra como overlay, igual que en los
+  // otros juegos del hub (no vive siempre montado en la pantalla).
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  // Para el corte por sílaba de la palabra final (ver más abajo) — mismo
+  // patrón que enroscaloReact: recalcula cuántas casillas entran por fila
+  // según el ancho real de la ventana.
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
 
   useEffect(() => {
-    setFlagMode(false);
-  }, [activeIndex]);
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-  // El tablero y el intento de adivinar viven en la misma pantalla ahora
-  // (ya no hay una pantalla separada "clueGuess") — esto solo mantiene
-  // `results[activeIndex]` al día con el progreso real del tablero, para
-  // que la lista de las 4 pistas en "adivinar palabra final" y el texto
-  // para compartir tengan la foto correcta aunque el jugador nunca haya
-  // "confirmado" nada todavía.
+  const board = useMinadoBoard(COMBINED_WORD, GRID_SIZE + 1);
+
+  // Letras encontradas de cada pista, en el orden que el jugador eligió
+  // verlas — arranca en orden de descubrimiento y el jugador puede
+  // reordenarlas arrastrando (DraggableLetters) para "leer" la palabra
+  // aunque las haya encontrado salteadas. Cuando aparece una letra nueva
+  // de esa pista se agrega al final, sin tocar el orden que ya armó.
+  const [clueOrders, setClueOrders] = useState<string[][]>(() => TODAY_PUZZLE.clueWords.map(() => []));
+
   useEffect(() => {
-    if (activeIndex === null) return;
-    setResults((prev) => {
-      const next = [...prev];
-      next[activeIndex] = { ...next[activeIndex], foundLetters: board.foundLetters, grid: board.grid };
-      return next;
+    setClueOrders((prev) =>
+      CLUE_RANGES.map((range, i) => {
+        const rawFound = board.foundLetters.filter(
+          (f) => f.sourceIndex >= range.start && f.sourceIndex < range.start + range.length,
+        );
+        if (rawFound.length <= prev[i].length) return prev[i];
+        const newOnes = rawFound.slice(prev[i].length).map((f) => f.letter);
+        return [...prev[i], ...newOnes];
+      }),
+    );
+  }, [board.foundLetters]);
+
+  function handleReorderClue(index: number, next: string[]) {
+    setClueOrders((prev) => {
+      const copy = [...prev];
+      copy[index] = next;
+      return copy;
     });
-  }, [activeIndex, board.foundLetters, board.grid]);
+  }
 
-  // --- Respuesta tipeada (pista individual o palabra final) — mismo
-  // patrón que enroscaloReact: casillas + teclado físico/virtual, con la
-  // misma protección contra el bug de Enter (un array de largo
-  // equivocado, de una respuesta anterior, se ignora en vez de
-  // confirmarse solo). ---
-  const answerLength = stage === "finalGuess" ? TODAY_PUZZLE.answer.length : activeIndex !== null ? results[activeIndex].word.length : 0;
-  const [answerChars, setAnswerChars] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (stage === "board" || stage === "finalGuess") {
-      setAnswerChars(Array.from({ length: answerLength }, () => ""));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, activeIndex]);
-
-  const commitClueAnswer = useCallback(
-    (chars: string[]) => {
-      if (activeIndex === null) return;
-      if (chars.length !== results[activeIndex].word.length) return;
-      if (chars.some((ch) => ch.length === 0)) return;
-      const correct = normalize(chars.join("")) === normalize(results[activeIndex].word);
-      setResults((prev) => {
-        const next = [...prev];
-        next[activeIndex] = { ...next[activeIndex], status: correct ? "correct" : "wrong" };
-        return next;
-      });
-      setStage("select");
-    },
-    [activeIndex, results],
-  );
+  // --- Respuesta tipeada (la palabra final, la única que se "confirma"
+  // ahora) — mismo patrón que enroscaloReact: casillas + teclado
+  // físico/virtual, con la misma protección contra el bug de Enter (un
+  // array de largo equivocado, de una respuesta anterior, se ignora en
+  // vez de confirmarse solo). ---
+  const [answerChars, setAnswerChars] = useState<string[]>(() => Array.from({ length: TODAY_PUZZLE.answer.length }, () => ""));
 
   const commitFinalAnswer = useCallback((chars: string[]) => {
     if (chars.length !== TODAY_PUZZLE.answer.length) return;
     if (chars.some((ch) => ch.length === 0)) return;
     const correct = normalize(chars.join("")) === normalize(TODAY_PUZZLE.answer);
     setFinalCorrect(correct);
+    setKeyboardOpen(false);
     setStage("done");
   }, []);
 
   const handleKeyInput = useCallback(
     (rawKey: string) => {
-      if (stage !== "board" && stage !== "finalGuess") return;
-      const commit = stage === "finalGuess" ? commitFinalAnswer : commitClueAnswer;
+      if (stage !== "play") return;
 
       if (rawKey === "{enter}") {
-        commit(answerChars);
+        commitFinalAnswer(answerChars);
         return;
       }
       if (rawKey === "{bksp}") {
@@ -145,123 +141,113 @@ export default function Game() {
         if (fillIndex < 0) return prev;
         const next = [...prev];
         next[fillIndex] = key;
-        if (next.every((ch) => ch.length > 0)) commit(next);
+        if (next.every((ch) => ch.length > 0)) commitFinalAnswer(next);
         return next;
       });
     },
-    [stage, answerChars, commitClueAnswer, commitFinalAnswer],
+    [stage, answerChars, commitFinalAnswer],
   );
 
-  usePhysicalKeyboard({ onKeyPress: handleKeyInput, enabled: stage === "board" || stage === "finalGuess" });
-
-  function handlePass() {
-    if (activeIndex === null) return;
-    setResults((prev) => {
-      const next = [...prev];
-      next[activeIndex] = { ...next[activeIndex], status: "passed" };
-      return next;
-    });
-    setStage("select");
-  }
+  usePhysicalKeyboard({ onKeyPress: handleKeyInput, enabled: stage === "play" });
 
   function handleCopyShare() {
-    const grids = results.map((r) => r.grid).filter((g): g is MinadoGrid => g !== null);
-    const text = buildShareText(grids, finalCorrect === true);
+    const text = buildShareText([board.grid], finalCorrect === true);
     navigator.clipboard?.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   }
 
-  const statusLabel: Record<ClueStatus, string> = {
-    pending: "Sin jugar",
-    correct: "¡Resuelta!",
-    wrong: "Incorrecta",
-    passed: "Pasada",
-  };
+  // Corte por sílaba de la palabra final si no entra en una sola fila —
+  // portado tal cual de enroscaloReact/imaginaloReact (mismo "plugin"):
+  // en vez de cortar en cualquier letra, busca el límite de sílaba más
+  // grande que entre en la fila, y recién ahí baja el resto a la
+  // siguiente (nunca parte una sílaba al medio).
+  const answerTileSize = 34;
+  const charsPerRow = Math.max(6, Math.floor((Math.min(520, windowWidth) - 48 + 1.6) / (answerTileSize + 1.6)));
+  const answerWord = TODAY_PUZZLE.answer;
+  const maxChunkLength = Math.max(2, charsPerRow - 1);
+  const answerBreakPoint =
+    answerWord.length > charsPerRow
+      ? (getSyllableBreakPoint(answerWord, maxChunkLength) ?? getRecommendedBreakPoint(answerWord.split(""), maxChunkLength))
+      : null;
+  const answerRow1 = answerBreakPoint !== null ? answerChars.slice(0, answerBreakPoint) : answerChars;
+  const answerRow2 = answerBreakPoint !== null ? answerChars.slice(answerBreakPoint) : [];
+
+  function renderAnswerTile(ch: string, key: number) {
+    return (
+      <Box
+        key={key}
+        onClick={() => setKeyboardOpen(true)}
+        sx={{
+          width: answerTileSize, height: answerTileSize, borderRadius: "6px",
+          border: `2px solid ${ACCENT}`, backgroundColor: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontWeight: 800, fontSize: 15, color: "#333",
+          cursor: "pointer",
+        }}
+      >
+        {ch}
+      </Box>
+    );
+  }
 
   return (
     <Layout>
-      <Box sx={{ width: "100%", px: { xs: 1.5, md: 2 }, pb: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+      <Box sx={{ width: "100%", px: { xs: 1.5, md: 2 }, pb: keyboardOpen ? 20 : 2, display: "flex", flexDirection: "column", gap: 2 }}>
         <Box sx={{ backgroundColor: "#fff", borderRadius: 4, p: 2.5, display: "flex", flexDirection: "column", gap: 2 }}>
-          {stage === "select" && (
+          {stage === "play" && (
             <>
-              <Typography sx={{ fontWeight: 800, color: "#333", textAlign: "center", fontSize: 20 }}>
-                Elegí una pista
-              </Typography>
-              <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5 }}>
-                {results.map((r, i) => {
-                  const done = r.status !== "pending";
-                  return (
-                    <Button
-                      key={i}
-                      onClick={() => {
-                        setActiveIndex(i);
-                        setStage("board");
-                      }}
-                      variant="contained"
-                      sx={{
-                        flexDirection: "column",
-                        gap: 0.5,
-                        py: 2,
-                        borderRadius: 3,
-                        backgroundColor: done ? (r.status === "correct" ? "#2ecc71" : "#999") : ACCENT,
-                        "&:hover": { backgroundColor: done ? (r.status === "correct" ? "#27ae60" : "#888") : "#c0392b" },
-                      }}
-                    >
-                      <Typography sx={{ fontWeight: 800, fontSize: 22 }}>Pista {i + 1}</Typography>
-                      <Typography sx={{ fontSize: 12, opacity: 0.9 }}>{statusLabel[r.status]}</Typography>
-                    </Button>
-                  );
-                })}
-              </Box>
-              <Button
-                onClick={() => setStage("finalGuess")}
-                variant="contained"
-                sx={{ backgroundColor: "#333", fontWeight: 800, borderRadius: 999, py: 1.4, mt: 1 }}
-              >
-                Adivinar palabra final
-              </Button>
-            </>
-          )}
-
-          {stage === "board" && activeIndex !== null && (
-            <>
-              <Typography sx={{ fontWeight: 800, color: "#333" }}>Pista {activeIndex + 1}</Typography>
-
               <Typography sx={{ textAlign: "center", color: "#777", fontSize: 13 }}>
-                {isMobile
-                  ? "Bandera suma la letra sin arriesgar · Revelar una letra es una bomba"
-                  : "Click derecho suma la letra sin arriesgar · tocar una letra directo es una bomba"}
+                Cada bandera encontrada es una letra de una pista. Encontrá todas antes de toparte
+                con una bomba.
               </Typography>
 
               {isMobile && (
-                <Box sx={{ display: "flex", gap: 1, justifyContent: "center" }}>
-                  <Button
+                // Una sola píldora partida al medio (no dos botones
+                // separados) — el lado activo queda sólido en rojo, el
+                // inactivo en gris clarito, con los mismos íconos que se
+                // ven en la grilla (la bomba clásica para Revelar, la
+                // banderita clásica para Bandera) en vez de los genéricos
+                // de lupa/bandera de Material Icons.
+                <Box
+                  sx={{
+                    display: "flex",
+                    width: "fit-content",
+                    mx: "auto",
+                    borderRadius: 999,
+                    overflow: "hidden",
+                  }}
+                >
+                  <Box
+                    component="button"
+                    type="button"
                     onClick={() => setFlagMode(false)}
-                    startIcon={<SearchRoundedIcon />}
                     sx={{
-                      flex: 1, maxWidth: 160, borderRadius: 999, fontWeight: 800,
-                      border: `2px solid ${ACCENT}`,
-                      backgroundColor: flagMode ? "transparent" : ACCENT,
-                      color: flagMode ? ACCENT : "#fff",
-                      "&:hover": { backgroundColor: flagMode ? "rgba(231,76,60,0.08)" : "#c0392b" },
+                      display: "flex", alignItems: "center", gap: 0.75,
+                      border: "none", outline: "none", appearance: "none", cursor: "pointer",
+                      px: 2.5, py: 1.1, fontWeight: 800, fontSize: 15, fontFamily: "inherit",
+                      backgroundColor: flagMode ? "#eeeeee" : ACCENT,
+                      color: flagMode ? "#888" : "#fff",
                     }}
                   >
+                    <MineIcon sx={{ fontSize: 21 }} />
                     Revelar
-                  </Button>
-                  <Button
+                  </Box>
+                  <Box
+                    component="button"
+                    type="button"
                     onClick={() => setFlagMode(true)}
-                    startIcon={<FlagRoundedIcon />}
                     sx={{
-                      flex: 1, maxWidth: 160, borderRadius: 999, fontWeight: 800,
-                      border: `2px solid ${ACCENT}`,
-                      backgroundColor: flagMode ? ACCENT : "transparent",
-                      color: flagMode ? "#fff" : ACCENT,
-                      "&:hover": { backgroundColor: flagMode ? "#c0392b" : "rgba(231,76,60,0.08)" },
+                      display: "flex", alignItems: "center", gap: 0.75,
+                      border: "none", outline: "none", appearance: "none", cursor: "pointer",
+                      px: 2.5, py: 1.1, fontWeight: 800, fontSize: 15, fontFamily: "inherit",
+                      backgroundColor: flagMode ? ACCENT : "#eeeeee",
+                      color: flagMode ? "#fff" : "#888",
                     }}
                   >
                     Bandera
-                  </Button>
+                    <ClassicFlagIcon sx={{ fontSize: 21 }} />
+                  </Box>
                 </Box>
               )}
 
@@ -273,8 +259,6 @@ export default function Game() {
                 onFlag={(r, c) => board.flagCell({ r, c })}
               />
 
-              <LetterSlots found={board.foundLetters} totalSlots={activeWord.length} />
-
               {board.phase === "solved" && (
                 <Typography sx={{ textAlign: "center", color: "#2ecc71", fontWeight: 800 }}>
                   ¡Encontraste todas las letras!
@@ -282,71 +266,69 @@ export default function Game() {
               )}
               {board.phase === "lost" && (
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75, color: ACCENT, fontWeight: 800 }}>
-                  <BombIcon fontSize="small" />
-                  <Typography sx={{ color: "inherit", fontWeight: "inherit" }}>
-                    ¡Pisaste una bomba! Vamos a adivinar con lo que encontraste.
+                  <MineIcon sx={{ fontSize: 24 }} />
+                  <Typography sx={{ color: "inherit", fontWeight: "inherit", textAlign: "center" }}>
+                    ¡Pisaste una bomba!
+                    <br />
+                    Arriesgá con lo que encontraste.
                   </Typography>
+                  <MineIcon sx={{ fontSize: 24 }} />
                 </Box>
               )}
 
-              <Typography sx={{ fontWeight: 800, color: "#333", textAlign: "center", mt: 1 }}>
-                ¿Cuál es la pista {activeIndex + 1}?
-              </Typography>
-
-              <Box sx={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
-                {answerChars.map((ch, i) => (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                {TODAY_PUZZLE.clueWords.map((word, i) => (
                   <Box
                     key={i}
                     sx={{
-                      width: 42, height: 42, borderRadius: "8px",
-                      border: `2px solid ${ACCENT}`, backgroundColor: "#fff",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontWeight: 800, fontSize: 18, color: "#333",
+                      backgroundColor: "#fff5f5",
+                      border: `1px solid ${ACCENT}`,
+                      borderRadius: 2,
+                      p: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 0.75,
                     }}
                   >
-                    {ch}
+                    <Typography sx={{ fontWeight: 800, fontSize: 10, color: "#333" }}>Pista {i + 1}</Typography>
+                    <DraggableLetters
+                      letters={clueOrders[i]}
+                      totalSlots={word.length}
+                      onReorder={(next) => handleReorderClue(i, next)}
+                    />
                   </Box>
                 ))}
               </Box>
 
-              <VirtualKeyboard onKeyPress={handleKeyInput} />
+              <Box
+                sx={{
+                  backgroundColor: "#fff5f5",
+                  border: `1px solid ${ACCENT}`,
+                  borderRadius: 2,
+                  p: 1.5,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 1,
+                  mt: 1,
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, color: "#333", textAlign: "center" }}>
+                  ¿Cuál es la palabra final?
+                </Typography>
 
-              <Button onClick={handlePass} sx={{ color: "#777", fontWeight: 700 }}>
-                Pasapalabra
-              </Button>
-            </>
-          )}
-
-          {stage === "finalGuess" && (
-            <>
-              <Typography sx={{ fontWeight: 800, color: "#333", textAlign: "center" }}>
-                ¿Cuál es la palabra final?
-              </Typography>
-
-              {results.map((r, i) => (
-                <Box key={i} sx={{ display: "flex", flexDirection: "column", gap: 0.5, alignItems: "center" }}>
-                  <Typography sx={{ fontSize: 11, color: "#999", fontWeight: 700 }}>PISTA {i + 1}</Typography>
-                  <LetterSlots found={r.foundLetters} totalSlots={r.word.length} />
+                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+                  <Box sx={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                    {answerRow1.map((ch, i) => renderAnswerTile(ch, i))}
+                  </Box>
+                  {answerRow2.length > 0 && (
+                    <Box sx={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                      {answerRow2.map((ch, i) => renderAnswerTile(ch, answerRow1.length + i))}
+                    </Box>
+                  )}
                 </Box>
-              ))}
-
-              <Box sx={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
-                {answerChars.map((ch, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      width: 42, height: 42, borderRadius: "8px",
-                      border: `2px solid ${ACCENT}`, backgroundColor: "#fff",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontWeight: 800, fontSize: 18, color: "#333",
-                    }}
-                  >
-                    {ch}
-                  </Box>
-                ))}
               </Box>
-
-              <VirtualKeyboard onKeyPress={handleKeyInput} />
             </>
           )}
 
@@ -366,13 +348,17 @@ export default function Game() {
           )}
         </Box>
 
-        {stage === "select" && (
+        {stage === "play" && (
           <HowToPlayCollapse
             title="¿Cómo jugar?"
-            body="Tocá una celda simple para revelarla: siempre es segura y te muestra un número (cuántas letras hay en sus vecinas) — si da 0, destapa en bloque sus vecinas. Pero si tocás directo una celda de letra sin marcarla antes, ¡es una bomba! Perdés esa pista y pasás a adivinar con las letras que ya habías encontrado hasta ese momento. Para sumar una letra sin arriesgar, marcála con bandera en vez de tocarla: en computadora, click derecho; en el celular, activá el modo Bandera arriba del tablero. Al marcarla, la grilla solo muestra la banderita (no la letra) — la letra aparece recién abajo, en la lista de encontradas. En cualquier momento podés intentar adivinar la pista con las letras que ya tengas."
+            body="Tocá una celda simple para revelarla: siempre es segura y te muestra un número (cuántas letras hay en sus vecinas) — si da 0, destapa en bloque sus vecinas. Pero si tocás directo una celda de letra sin marcarla antes, ¡es una bomba! En la grilla hay letras de las 4 pistas mezcladas. Para sumar una letra sin arriesgar, marcála con bandera en vez de tocarla: en computadora, click derecho; en el celular, activá el modo Bandera arriba del tablero. Cada letra que reclamás baja a la tarjeta de su pista — arrastralas para ordenarlas y descubrir la palabra. Usá las 4 pistas para adivinar la palabra final, abajo de todo."
           />
         )}
       </Box>
+
+      {stage === "play" && (
+        <VirtualKeyboard onKeyPress={handleKeyInput} open={keyboardOpen} onClose={() => setKeyboardOpen(false)} />
+      )}
     </Layout>
   );
 }

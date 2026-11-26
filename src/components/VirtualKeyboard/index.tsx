@@ -1,16 +1,18 @@
 import Box from "@mui/material/Box";
+import KeyboardHideRoundedIcon from "@mui/icons-material/KeyboardHideRounded";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
 interface VirtualKeyboardProps {
   onKeyPress: (key: string) => void;
+  // Igual que en los otros juegos del hub: el teclado NO vive siempre
+  // montado en la pantalla — es un overlay fijo abajo de todo que se abre
+  // al tocar una casilla de respuesta y se cierra con su propio botón
+  // (reporte real: "que funcione igual que los otros juegos, que se
+  // levante y cierre como en los otros").
+  open: boolean;
+  onClose: () => void;
 }
 
-// Versión simplificada del teclado de enroscaloReact: mismas 3 filas
-// QWERTY + el borrar dentro de la fila Z-M (rojo) — sin las filas de
-// acentos (Minado por ahora es un solo idioma) ni Pasapalabra (vive como
-// botón aparte en game.tsx, visible en mobile y desktop por igual). Solo
-// se muestra en mobile, igual que el original (desktop usa el teclado
-// físico vía usePhysicalKeyboard).
 const ROW_1 = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"];
 const ROW_2 = ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ"];
 const ROW_3 = ["Z", "X", "C", "V", "B", "N", "M"];
@@ -34,40 +36,64 @@ const keyButtonSx = {
   "&:active": { transform: "scale(0.96)" },
 } as const;
 
-export default function VirtualKeyboard({ onKeyPress }: VirtualKeyboardProps) {
+// Solo se muestra en mobile, igual que el original (desktop usa el
+// teclado físico vía usePhysicalKeyboard, que no depende de este `open`).
+export default function VirtualKeyboard({ onKeyPress, open, onClose }: VirtualKeyboardProps) {
   const isMobile = useIsMobile();
-  if (!isMobile) return null;
+  if (!isMobile || !open) return null;
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: "4px", width: "100%" }}>
-      <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
-        {ROW_1.map((letter) => (
-          <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
-            {letter}
+    <Box
+      sx={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.9)",
+        padding: "8px 4px 12px",
+        zIndex: 9999,
+        borderTop: "1px solid #555",
+      }}
+    >
+      <Box sx={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
+          {ROW_1.map((letter) => (
+            <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
+              {letter}
+            </Box>
+          ))}
+        </Box>
+        <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
+          {ROW_2.map((letter) => (
+            <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
+              {letter}
+            </Box>
+          ))}
+        </Box>
+        <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
+          <Box
+            component="button"
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar teclado"
+            sx={{ ...keyButtonSx, flex: 1.5, backgroundColor: "#e74c3c", borderColor: "#c0392b" }}
+          >
+            <KeyboardHideRoundedIcon sx={{ fontSize: 18 }} />
           </Box>
-        ))}
-      </Box>
-      <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
-        {ROW_2.map((letter) => (
-          <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
-            {letter}
+          {ROW_3.map((letter) => (
+            <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
+              {letter}
+            </Box>
+          ))}
+          <Box
+            component="button"
+            type="button"
+            onClick={() => onKeyPress("{bksp}")}
+            aria-label="Borrar"
+            sx={{ ...keyButtonSx, flex: 1.5, backgroundColor: "#e74c3c", borderColor: "#c0392b" }}
+          >
+            ⌫
           </Box>
-        ))}
-      </Box>
-      <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
-        {ROW_3.map((letter) => (
-          <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
-            {letter}
-          </Box>
-        ))}
-        <Box
-          component="button"
-          type="button"
-          onClick={() => onKeyPress("{bksp}")}
-          aria-label="Borrar"
-          sx={{ ...keyButtonSx, flex: 1.5, backgroundColor: "#e74c3c", borderColor: "#c0392b" }}
-        >
-          ⌫
         </Box>
       </Box>
     </Box>

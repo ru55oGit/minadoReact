@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createEmptyGrid, floodReveal, placeLettersRandomly } from "../game/grid";
+import { GRID_SIZE, createEmptyGrid, floodReveal, placeLettersRandomly } from "../game/grid";
 import { GridPos, MinadoGrid } from "../game/types";
 
 export type BoardPhase = "playing" | "solved" | "lost";
+
+// `sourceIndex` es la posición de esa letra dentro de la palabra
+// combinada (ver Cell en types.ts) — lo que permite, afuera de este hook,
+// reconstruir a qué pista pertenece cada letra encontrada.
+export interface FoundLetter {
+  letter: string;
+  sourceIndex: number;
+}
 
 // Un tablero por palabra-pista — buscaminas común, con riesgo real:
 // - revealCell (tocar): celda simple -> SIEMPRE segura, muestra su número
@@ -22,21 +30,21 @@ export type BoardPhase = "playing" | "solved" | "lost";
 // "letras duplicadas"). Todo se calcula primero como valores planos
 // (leyendo `gridRef`/`foundRef`, nunca un callback-updater) y recién
 // después se asignan de una sola pasada con setX(valorPlano).
-export function useMinadoBoard(word: string) {
-  const [grid, setGrid] = useState<MinadoGrid>(() => createEmptyGrid());
-  const [foundLetters, setFoundLetters] = useState<string[]>([]);
+export function useMinadoBoard(word: string, size: number = GRID_SIZE) {
+  const [grid, setGrid] = useState<MinadoGrid>(() => createEmptyGrid(size));
+  const [foundLetters, setFoundLetters] = useState<FoundLetter[]>([]);
   const [phase, setPhase] = useState<BoardPhase>("playing");
   const gridRef = useRef(grid);
   const foundRef = useRef(foundLetters);
 
   useEffect(() => {
-    const fresh = createEmptyGrid();
+    const fresh = createEmptyGrid(size);
     gridRef.current = fresh;
     foundRef.current = [];
     setGrid(fresh);
     setFoundLetters([]);
     setPhase("playing");
-  }, [word]);
+  }, [word, size]);
 
   function ensureGenerated(pos: GridPos): MinadoGrid {
     const current = gridRef.current;
@@ -52,8 +60,8 @@ export function useMinadoBoard(word: string) {
     setGrid(next);
   }
 
-  function commitFoundLetter(letter: string) {
-    const next = [...foundRef.current, letter];
+  function commitFoundLetter(letter: string, sourceIndex: number) {
+    const next = [...foundRef.current, { letter, sourceIndex }];
     foundRef.current = next;
     setFoundLetters(next);
     if (next.length === word.length) setPhase("solved");
@@ -103,7 +111,7 @@ export function useMinadoBoard(word: string) {
       const next = base.map((row) => row.slice());
       next[r][c] = { ...cell, state: "found" };
       commitGrid(next);
-      commitFoundLetter(cell.letter!);
+      commitFoundLetter(cell.letter!, cell.sourceIndex!);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [phase, word],
