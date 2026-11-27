@@ -109,11 +109,4 @@ describe("floodReveal", () => {
     const revealedLetters = next.flat().filter((cell) => cell.kind === "letter" && cell.state !== "hidden");
     expect(revealedLetters).toHaveLength(0);
   });
-
-  it("does nothing to a cell that's already flagged", () => {
-    const grid = placeLettersRandomly(createEmptyGrid(), "EVA", { r: 0, c: 0 });
-    grid[0][0].flagged = true;
-    const next = floodReveal(grid, { r: 0, c: 0 });
-    expect(next[0][0].state).toBe("hidden");
-  });
 });

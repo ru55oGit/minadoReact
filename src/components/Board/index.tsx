@@ -77,7 +77,6 @@ export default function Board({ grid, interactive, flagMode, onReveal, onFlag }:
             const isFound = cell.state === "found";
             const isExploded = cell.state === "exploded";
             const showNumber = isRevealed && cell.adjacent && cell.adjacent > 0;
-            const showHelperFlag = cell.flagged && isHidden;
             // Las celdas resueltas (reveladas, reclamadas o explotadas) se
             // ven "hundidas"; las que siguen ocultas, "en relieve" — igual
             // que el buscaminas de Windows de toda la vida.
@@ -137,10 +136,9 @@ export default function Board({ grid, interactive, flagMode, onReveal, onFlag }:
               >
                 {/* La letra reclamada con bandera NO se muestra acá — solo
                     queda la banderita como confirmación; la letra real
-                    aparece abajo, en la tarjeta de su pista (DraggableLetters). */}
+                    aparece abajo, en la tarjeta de su pista (ClueLetterSlots). */}
                 {isFound && <ClassicFlagIcon sx={CELL_ICON_SX} />}
                 {isExploded && <MineIcon sx={CELL_ICON_SX} />}
-                {showHelperFlag && <ClassicFlagIcon sx={CELL_ICON_SX} />}
                 {showNumber && cell.adjacent}
               </Box>
             );

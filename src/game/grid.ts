@@ -18,7 +18,7 @@ const NEIGHBOR_OFFSETS: GridPos[] = [
 // (igual que el buscaminas real).
 export function createEmptyGrid(size: number = GRID_SIZE): MinadoGrid {
   return Array.from({ length: size }, () =>
-    Array.from({ length: size }, (): Cell => ({ kind: "plain", state: "hidden", flagged: false })),
+    Array.from({ length: size }, (): Cell => ({ kind: "plain", state: "hidden" })),
   );
 }
 
@@ -158,7 +158,7 @@ export function floodReveal(grid: MinadoGrid, start: GridPos): MinadoGrid {
     seen.add(key);
 
     const target = next[pos.r]?.[pos.c];
-    if (!target || target.kind !== "plain" || target.state !== "hidden" || target.flagged) continue;
+    if (!target || target.kind !== "plain" || target.state !== "hidden") continue;
 
     next[pos.r][pos.c] = { ...target, state: "revealed" };
 

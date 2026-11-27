@@ -104,30 +104,15 @@ export default function Game() {
 
   const board = useMinadoBoard(combinedWord, GRID_SIZE + 1);
 
-  // Cronómetro clásico del header (cuenta mientras se juega, se congela
-  // al resolver/perder) y popup de "jugar de nuevo" — igual que el
-  // buscaminas de Windows, pero perder acá pide ver un anuncio antes de
-  // reiniciar (patrón de recompensa ya usado en el resto del hub).
-  const [seconds, setSeconds] = useState(0);
+  // Popup de "jugar de nuevo" — perder (las 3 vidas, ver useMinadoBoard)
+  // pide ver un anuncio antes de reiniciar (patrón de recompensa ya
+  // usado en el resto del hub).
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
-
-  // No arranca hasta el primer toque/bandera real sobre la grilla — la
-  // generación de letras es diferida (ver useMinadoBoard), así que "ya
-  // hay alguna celda de letra" es exactamente "ya se hizo el primer
-  // movimiento".
-  const hasStarted = board.grid.some((row) => row.some((cell) => cell.kind === "letter"));
-
-  useEffect(() => {
-    if (!hasStarted || board.phase !== "playing") return;
-    const id = setInterval(() => setSeconds((s) => Math.min(999, s + 1)), 1000);
-    return () => clearInterval(id);
-  }, [hasStarted, board.phase]);
 
   function resetGame() {
     board.reset();
     setClueOrders(emptyClueOrders());
     setAnswerChars(Array.from({ length: puzzle.answer.length }, () => ""));
-    setSeconds(0);
     setKeyboardOpen(false);
   }
 
@@ -146,7 +131,6 @@ export default function Game() {
     }
     setClueOrders(puzzle.clueWords.map((word) => Array.from({ length: word.length }, () => "")));
     setAnswerChars(Array.from({ length: puzzle.answer.length }, () => ""));
-    setSeconds(0);
     setKeyboardOpen(false);
     setFinalCorrect(null);
     setStage("play");
@@ -373,7 +357,7 @@ export default function Game() {
               >
                 <MinesweeperHeader
                   pendingLetters={combinedWord.length - board.foundLetters.length}
-                  seconds={seconds}
+                  lives={board.lives}
                   phase={board.phase}
                   onSmileyClick={handleSmileyClick}
                 />
@@ -398,7 +382,7 @@ export default function Game() {
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75, color: ACCENT, fontWeight: 800 }}>
                   <MineIcon sx={{ fontSize: 24 }} />
                   <Typography sx={{ color: "inherit", fontWeight: "inherit", textAlign: "center" }}>
-                    {t.steppedOnBomb}
+                    {t.outOfLives}
                     <br />
                     {t.riskWithWhatYouFound}
                   </Typography>

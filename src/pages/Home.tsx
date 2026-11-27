@@ -5,6 +5,7 @@ import Button from "@mui/material/Button";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import Layout from "../components/Layout";
 import HomePreviewBoard from "../components/HomePreviewBoard";
+import LanguageSelector from "../components/LanguageSelector";
 import SmileyIcon from "../components/icons/SmileyIcon";
 import { useLanguage } from "../i18n/LanguageContext";
 import { WEEK_DAY_KEYS, getCurrentDayKey, isDayAvailable, dateKeyForDayKey } from "../data/dailyPuzzles";
@@ -15,7 +16,7 @@ const HUB_URL = "https://www.boludeando.com";
 
 export default function Home() {
   const navigate = useNavigate();
-  const { t, currentLanguage, setLanguage, availableLanguages } = useLanguage();
+  const { t, currentLanguage } = useLanguage();
 
   function timeGreeting(): string {
     const hour = new Date().getHours();
@@ -67,29 +68,10 @@ export default function Home() {
           >
             Boludeando
           </Box>
-
-          {/* Selector de idioma — misma bandera+código que el resto del
-              hub, en la esquina del header. */}
-          <Box sx={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", zIndex: 1, display: "flex", gap: 0.5 }}>
-            {availableLanguages.map((lang) => (
-              <Box
-                key={lang.code}
-                component="button"
-                type="button"
-                onClick={() => setLanguage(lang.code)}
-                aria-label={lang.name}
-                sx={{
-                  border: "none", outline: "none", appearance: "none", cursor: "pointer",
-                  backgroundColor: "transparent", fontSize: 20, p: 0.25, borderRadius: 1,
-                  opacity: currentLanguage === lang.code ? 1 : 0.4,
-                }}
-              >
-                {lang.flag}
-              </Box>
-            ))}
-          </Box>
         </Box>
       </Box>
+
+      <LanguageSelector />
 
       <Box sx={{ width: "100%", px: { xs: 1.5, md: 2 }, pt: "80px", pb: 2, display: "flex", flexDirection: "column", gap: 2 }}>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
