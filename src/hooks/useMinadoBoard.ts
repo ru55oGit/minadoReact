@@ -37,13 +37,18 @@ export function useMinadoBoard(word: string, size: number = GRID_SIZE) {
   const gridRef = useRef(grid);
   const foundRef = useRef(foundLetters);
 
-  useEffect(() => {
+  function resetBoard() {
     const fresh = createEmptyGrid(size);
     gridRef.current = fresh;
     foundRef.current = [];
     setGrid(fresh);
     setFoundLetters([]);
     setPhase("playing");
+  }
+
+  useEffect(() => {
+    resetBoard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [word, size]);
 
   function ensureGenerated(pos: GridPos): MinadoGrid {
@@ -117,5 +122,5 @@ export function useMinadoBoard(word: string, size: number = GRID_SIZE) {
     [phase, word],
   );
 
-  return { grid, foundLetters, phase, revealCell, flagCell };
+  return { grid, foundLetters, phase, revealCell, flagCell, reset: resetBoard };
 }

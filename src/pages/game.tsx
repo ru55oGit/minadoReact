@@ -1,22 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
 import Layout from "../components/Layout";
 import Board from "../components/Board";
+import MinesweeperHeader from "../components/MinesweeperHeader";
 import MineIcon from "../components/icons/MineIcon";
 import ClassicFlagIcon from "../components/icons/ClassicFlagIcon";
-import DraggableLetters from "../components/DraggableLetters";
+import ClueLetterSlots from "../components/ClueLetterSlots";
 import VirtualKeyboard from "../components/VirtualKeyboard";
 import HowToPlayCollapse from "../components/HowToPlayCollapse";
 import { useMinadoBoard } from "../hooks/useMinadoBoard";
 import { usePhysicalKeyboard } from "../hooks/usePhysicalKeyboard";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useLanguage } from "../i18n/LanguageContext";
 import { GRID_SIZE } from "../game/grid";
-import { TODAY_PUZZLE } from "../data/dailyPuzzle";
+import {
+  getTodayBonusPuzzle,
+  getGameNumber,
+  getCurrentDayKey,
+  isDayKey,
+  isDayAvailable,
+  getPuzzleForDayKey,
+  dateKeyForDayKey,
+} from "../data/dailyPuzzles";
+import { getDayProgress, saveDayProgress, scopeKeyFor, bonusScopeKey, isBonusUnlocked } from "../utils/minadoProgress";
 import { buildShareText } from "../utils/shareText";
 import { getRecommendedBreakPoint, getSyllableBreakPoint } from "../utils/syllableBreak";
+import { BEVEL_LIGHT, BEVEL_DARK, HIDDEN_BG } from "../components/boardTheme";
 
 const ACCENT = "#e74c3c";
 
@@ -33,9 +46,6 @@ function buildClueRanges(words: string[]) {
   });
 }
 
-const COMBINED_WORD = TODAY_PUZZLE.clueWords.join("");
-const CLUE_RANGES = buildClueRanges(TODAY_PUZZLE.clueWords);
-
 function normalize(word: string): string {
   return word.trim().toUpperCase();
 }
@@ -45,6 +55,32 @@ type Stage = "play" | "done";
 export default function Game() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { t, currentLanguage } = useLanguage();
+  const [searchParams] = useSearchParams();
+  // "Uno por día", mismo esquema de ruta que enroscaloReact
+  // (/game?day=<clave>|bonus, sin parámetro = hoy). Un día que no sea
+  // "bonus" ni una clave válida de la semana cae a hoy; un día de la
+  // semana actual que todavía no llegó (no se puede jugar por
+  // adelantado) también cae a hoy.
+  const dayParam = searchParams.get("day");
+  const isBonus = dayParam === "bonus";
+  const requestedDayKey = isDayKey(dayParam) ? dayParam : getCurrentDayKey();
+  const dayKey = isBonus ? getCurrentDayKey() : isDayAvailable(requestedDayKey) ? requestedDayKey : getCurrentDayKey();
+  const puzzle = useMemo(
+    () => (isBonus ? getTodayBonusPuzzle(new Date(), currentLanguage) : getPuzzleForDayKey(dayKey, new Date(), currentLanguage)),
+    [isBonus, dayKey, currentLanguage],
+  );
+  const combinedWord = useMemo(() => puzzle.clueWords.join(""), [puzzle]);
+  const clueRanges = useMemo(() => buildClueRanges(puzzle.clueWords), [puzzle]);
+  const gameNumber = useMemo(() => getGameNumber(), []);
+  // Clave de guardado por día calendario real (no por día de la semana) y
+  // por idioma: cada ocurrencia de "lunes" en semanas distintas, o en un
+  // idioma distinto, es su propio día.
+  const scopeKey = useMemo(
+    () => (isBonus ? bonusScopeKey(currentLanguage, dateKeyForDayKey(dayKey)) : scopeKeyFor(currentLanguage, dateKeyForDayKey(dayKey))),
+    [isBonus, dayKey, currentLanguage],
+  );
+
   const [stage, setStage] = useState<Stage>("play");
   const [finalCorrect, setFinalCorrect] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
@@ -66,51 +102,121 @@ export default function Game() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const board = useMinadoBoard(COMBINED_WORD, GRID_SIZE + 1);
+  const board = useMinadoBoard(combinedWord, GRID_SIZE + 1);
 
-  // Letras encontradas de cada pista, en el orden que el jugador eligió
-  // verlas — arranca en orden de descubrimiento y el jugador puede
-  // reordenarlas arrastrando (DraggableLetters) para "leer" la palabra
-  // aunque las haya encontrado salteadas. Cuando aparece una letra nueva
-  // de esa pista se agrega al final, sin tocar el orden que ya armó.
-  const [clueOrders, setClueOrders] = useState<string[][]>(() => TODAY_PUZZLE.clueWords.map(() => []));
+  // Cronómetro clásico del header (cuenta mientras se juega, se congela
+  // al resolver/perder) y popup de "jugar de nuevo" — igual que el
+  // buscaminas de Windows, pero perder acá pide ver un anuncio antes de
+  // reiniciar (patrón de recompensa ya usado en el resto del hub).
+  const [seconds, setSeconds] = useState(0);
+  const [rewardModalOpen, setRewardModalOpen] = useState(false);
+
+  // No arranca hasta el primer toque/bandera real sobre la grilla — la
+  // generación de letras es diferida (ver useMinadoBoard), así que "ya
+  // hay alguna celda de letra" es exactamente "ya se hizo el primer
+  // movimiento".
+  const hasStarted = board.grid.some((row) => row.some((cell) => cell.kind === "letter"));
 
   useEffect(() => {
-    setClueOrders((prev) =>
-      CLUE_RANGES.map((range, i) => {
-        const rawFound = board.foundLetters.filter(
-          (f) => f.sourceIndex >= range.start && f.sourceIndex < range.start + range.length,
-        );
-        if (rawFound.length <= prev[i].length) return prev[i];
-        const newOnes = rawFound.slice(prev[i].length).map((f) => f.letter);
-        return [...prev[i], ...newOnes];
+    if (!hasStarted || board.phase !== "playing") return;
+    const id = setInterval(() => setSeconds((s) => Math.min(999, s + 1)), 1000);
+    return () => clearInterval(id);
+  }, [hasStarted, board.phase]);
+
+  function resetGame() {
+    board.reset();
+    setClueOrders(emptyClueOrders());
+    setAnswerChars(Array.from({ length: puzzle.answer.length }, () => ""));
+    setSeconds(0);
+    setKeyboardOpen(false);
+  }
+
+  // Si el día activo cambia (otro día de la semana, bonus, otro idioma,
+  // etc. vía el query param de la URL o el selector de idioma) sincroniza
+  // todo con ESE día: si ya se jugó (persistido en localStorage), salta
+  // derecho al resultado guardado en vez de dejar jugar de nuevo — "uno
+  // por día" de verdad, igual que Wordle. El tablero ya se reinicia solo
+  // al cambiar `combinedWord` (ver useMinadoBoard).
+  useEffect(() => {
+    const progress = getDayProgress(scopeKey);
+    if (progress.status === "completed") {
+      setFinalCorrect(progress.correct);
+      setStage("done");
+      return;
+    }
+    setClueOrders(puzzle.clueWords.map((word) => Array.from({ length: word.length }, () => "")));
+    setAnswerChars(Array.from({ length: puzzle.answer.length }, () => ""));
+    setSeconds(0);
+    setKeyboardOpen(false);
+    setFinalCorrect(null);
+    setStage("play");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
+
+  function handleSmileyClick() {
+    if (board.phase === "lost") {
+      setRewardModalOpen(true);
+      return;
+    }
+    resetGame();
+  }
+
+  function handleWatchRewarded() {
+    // TODO: enganchar acá el SDK de ads real (useRewardedAd, como en el
+    // resto del hub) cuando Minado se sume al sistema de ads — por ahora
+    // el "premio" es inmediato.
+    setRewardModalOpen(false);
+    resetGame();
+  }
+
+  // Letras encontradas de cada pista, cada una YA en la posición que le
+  // corresponde dentro de la palabra (no en orden de descubrimiento) —
+  // con las 4 pistas compartiendo una sola grilla es mucho más difícil
+  // completar una pista entera, así que no tenía sentido pedirle al
+  // jugador que además las reordene a mano para leerlas.
+  function emptyClueOrders(): string[][] {
+    return puzzle.clueWords.map((word) => Array.from({ length: word.length }, () => ""));
+  }
+
+  const [clueOrders, setClueOrders] = useState<string[][]>(emptyClueOrders);
+
+  useEffect(() => {
+    setClueOrders(() =>
+      clueRanges.map((range, i) => {
+        const slots = Array.from({ length: range.length }, () => "");
+        board.foundLetters.forEach((f) => {
+          if (f.sourceIndex >= range.start && f.sourceIndex < range.start + range.length) {
+            slots[f.sourceIndex - range.start] = f.letter;
+          }
+        });
+        return slots;
       }),
     );
   }, [board.foundLetters]);
-
-  function handleReorderClue(index: number, next: string[]) {
-    setClueOrders((prev) => {
-      const copy = [...prev];
-      copy[index] = next;
-      return copy;
-    });
-  }
 
   // --- Respuesta tipeada (la palabra final, la única que se "confirma"
   // ahora) — mismo patrón que enroscaloReact: casillas + teclado
   // físico/virtual, con la misma protección contra el bug de Enter (un
   // array de largo equivocado, de una respuesta anterior, se ignora en
   // vez de confirmarse solo). ---
-  const [answerChars, setAnswerChars] = useState<string[]>(() => Array.from({ length: TODAY_PUZZLE.answer.length }, () => ""));
+  const [answerChars, setAnswerChars] = useState<string[]>(() => Array.from({ length: puzzle.answer.length }, () => ""));
 
-  const commitFinalAnswer = useCallback((chars: string[]) => {
-    if (chars.length !== TODAY_PUZZLE.answer.length) return;
-    if (chars.some((ch) => ch.length === 0)) return;
-    const correct = normalize(chars.join("")) === normalize(TODAY_PUZZLE.answer);
-    setFinalCorrect(correct);
-    setKeyboardOpen(false);
-    setStage("done");
-  }, []);
+  const commitFinalAnswer = useCallback(
+    (chars: string[]) => {
+      if (chars.length !== puzzle.answer.length) return;
+      if (chars.some((ch) => ch.length === 0)) return;
+      const correct = normalize(chars.join("")) === normalize(puzzle.answer);
+      saveDayProgress(scopeKey, correct);
+      setFinalCorrect(correct);
+      setKeyboardOpen(false);
+      setStage("done");
+    },
+    [puzzle, scopeKey],
+  );
+
+  // La Ñ solo tiene sentido en español — en/pt (en esta versión, sin
+  // tildes) usan A-Z nomás.
+  const letterPattern = useMemo(() => (currentLanguage === "es" ? /^[A-ZÑ]$/ : /^[A-Z]$/), [currentLanguage]);
 
   const handleKeyInput = useCallback(
     (rawKey: string) => {
@@ -134,7 +240,7 @@ export default function Game() {
         return;
       }
       const key = rawKey.toUpperCase();
-      if (!/^[A-ZÑ]$/.test(key)) return;
+      if (!letterPattern.test(key)) return;
 
       setAnswerChars((prev) => {
         const fillIndex = prev.findIndex((ch) => !ch);
@@ -145,13 +251,13 @@ export default function Game() {
         return next;
       });
     },
-    [stage, answerChars, commitFinalAnswer],
+    [stage, answerChars, commitFinalAnswer, letterPattern],
   );
 
   usePhysicalKeyboard({ onKeyPress: handleKeyInput, enabled: stage === "play" });
 
   function handleCopyShare() {
-    const text = buildShareText([board.grid], finalCorrect === true);
+    const text = buildShareText([board.grid], finalCorrect === true, isBonus ? undefined : gameNumber);
     navigator.clipboard?.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
@@ -164,7 +270,7 @@ export default function Game() {
   // siguiente (nunca parte una sílaba al medio).
   const answerTileSize = 34;
   const charsPerRow = Math.max(6, Math.floor((Math.min(520, windowWidth) - 48 + 1.6) / (answerTileSize + 1.6)));
-  const answerWord = TODAY_PUZZLE.answer;
+  const answerWord = puzzle.answer;
   const maxChunkLength = Math.max(2, charsPerRow - 1);
   const answerBreakPoint =
     answerWord.length > charsPerRow
@@ -198,8 +304,7 @@ export default function Game() {
           {stage === "play" && (
             <>
               <Typography sx={{ textAlign: "center", color: "#777", fontSize: 13 }}>
-                Cada bandera encontrada es una letra de una pista. Encontrá todas antes de toparte
-                con una bomba.
+                {t.riskHint}
               </Typography>
 
               {isMobile && (
@@ -231,7 +336,7 @@ export default function Game() {
                     }}
                   >
                     <MineIcon sx={{ fontSize: 21 }} />
-                    Revelar
+                    {t.revealLabel}
                   </Box>
                   <Box
                     component="button"
@@ -245,39 +350,64 @@ export default function Game() {
                       color: flagMode ? "#fff" : "#888",
                     }}
                   >
-                    Bandera
+                    {t.flagLabel}
                     <ClassicFlagIcon sx={{ fontSize: 21 }} />
                   </Box>
                 </Box>
               )}
 
-              <Board
-                grid={board.grid}
-                interactive={board.phase === "playing"}
-                flagMode={flagMode}
-                onReveal={(r, c) => board.revealCell({ r, c })}
-                onFlag={(r, c) => board.flagCell({ r, c })}
-              />
+              {/* Header + grilla comparten un solo marco biselado rojo/
+                  blanco (no dos bloques separados) — pedido real: "unido
+                  a la grilla tb". */}
+              <Box
+                sx={{
+                  backgroundColor: HIDDEN_BG,
+                  borderStyle: "solid",
+                  borderWidth: "4px",
+                  borderTopColor: BEVEL_LIGHT,
+                  borderLeftColor: BEVEL_LIGHT,
+                  borderRightColor: BEVEL_DARK,
+                  borderBottomColor: BEVEL_DARK,
+                  p: "8px",
+                }}
+              >
+                <MinesweeperHeader
+                  pendingLetters={combinedWord.length - board.foundLetters.length}
+                  seconds={seconds}
+                  phase={board.phase}
+                  onSmileyClick={handleSmileyClick}
+                />
+
+                <Box sx={{ height: "8px" }} />
+
+                <Board
+                  grid={board.grid}
+                  interactive={board.phase === "playing"}
+                  flagMode={flagMode}
+                  onReveal={(r, c) => board.revealCell({ r, c })}
+                  onFlag={(r, c) => board.flagCell({ r, c })}
+                />
+              </Box>
 
               {board.phase === "solved" && (
                 <Typography sx={{ textAlign: "center", color: "#2ecc71", fontWeight: 800 }}>
-                  ¡Encontraste todas las letras!
+                  {t.allLettersFound}
                 </Typography>
               )}
               {board.phase === "lost" && (
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75, color: ACCENT, fontWeight: 800 }}>
                   <MineIcon sx={{ fontSize: 24 }} />
                   <Typography sx={{ color: "inherit", fontWeight: "inherit", textAlign: "center" }}>
-                    ¡Pisaste una bomba!
+                    {t.steppedOnBomb}
                     <br />
-                    Arriesgá con lo que encontraste.
+                    {t.riskWithWhatYouFound}
                   </Typography>
                   <MineIcon sx={{ fontSize: 24 }} />
                 </Box>
               )}
 
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                {TODAY_PUZZLE.clueWords.map((word, i) => (
+                {puzzle.clueWords.map((_, i) => (
                   <Box
                     key={i}
                     sx={{
@@ -291,12 +421,8 @@ export default function Game() {
                       gap: 0.75,
                     }}
                   >
-                    <Typography sx={{ fontWeight: 800, fontSize: 10, color: "#333" }}>Pista {i + 1}</Typography>
-                    <DraggableLetters
-                      letters={clueOrders[i]}
-                      totalSlots={word.length}
-                      onReorder={(next) => handleReorderClue(i, next)}
-                    />
+                    <Typography sx={{ fontWeight: 800, fontSize: 10, color: "#333" }}>{t.clueLabel(i + 1)}</Typography>
+                    <ClueLetterSlots letters={clueOrders[i]} />
                   </Box>
                 ))}
               </Box>
@@ -315,7 +441,7 @@ export default function Game() {
                 }}
               >
                 <Typography sx={{ fontWeight: 800, color: "#333", textAlign: "center" }}>
-                  ¿Cuál es la palabra final?
+                  {t.finalWordQuestion}
                 </Typography>
 
                 <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
@@ -336,29 +462,75 @@ export default function Game() {
             <>
               <Typography sx={{ fontSize: 40, textAlign: "center" }}>{finalCorrect ? "🎉" : "😕"}</Typography>
               <Typography sx={{ textAlign: "center", fontWeight: 800, color: finalCorrect ? "#2ecc71" : ACCENT }}>
-                {finalCorrect ? "¡Correcto!" : `Era: ${TODAY_PUZZLE.answer}`}
+                {finalCorrect ? t.correctLabel : t.wasLabel(puzzle.answer)}
               </Typography>
               <Button onClick={handleCopyShare} variant="contained" sx={{ backgroundColor: "#333", fontWeight: 800, borderRadius: 999, py: 1.2 }}>
-                {copied ? "¡Copiado!" : "Compartir resultado"}
+                {copied ? t.copiedLabel : t.shareButton}
               </Button>
+
+              {/* Aviso hacia el set bonus — solo si no estás ya jugando
+                  uno, y solo si ya está desbloqueado (jugaste todos los
+                  días disponibles de la semana): pedido real: "si la
+                  gente se copa, acuda mediante un aviso a los juegos
+                  bonus". */}
+              {!isBonus && isBonusUnlocked(currentLanguage) && (
+                <Box
+                  sx={{
+                    backgroundColor: "#fff5f5",
+                    border: `1px dashed ${ACCENT}`,
+                    borderRadius: 2,
+                    p: 1.5,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 1,
+                    width: "100%",
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 800, color: "#333", textAlign: "center", fontSize: 14 }}>
+                    {t.bonusInviteTitle}
+                  </Typography>
+                  <Button
+                    onClick={() => navigate("/game?day=bonus")}
+                    variant="outlined"
+                    sx={{ borderColor: ACCENT, color: ACCENT, fontWeight: 800, borderRadius: 999 }}
+                  >
+                    {t.bonusInviteButton}
+                  </Button>
+                </Box>
+              )}
+
               <Button onClick={() => navigate("/")} sx={{ color: "#777", fontWeight: 700 }}>
-                Volver al inicio
+                {t.backHome}
               </Button>
             </>
           )}
         </Box>
 
         {stage === "play" && (
-          <HowToPlayCollapse
-            title="¿Cómo jugar?"
-            body="Tocá una celda simple para revelarla: siempre es segura y te muestra un número (cuántas letras hay en sus vecinas) — si da 0, destapa en bloque sus vecinas. Pero si tocás directo una celda de letra sin marcarla antes, ¡es una bomba! En la grilla hay letras de las 4 pistas mezcladas. Para sumar una letra sin arriesgar, marcála con bandera en vez de tocarla: en computadora, click derecho; en el celular, activá el modo Bandera arriba del tablero. Cada letra que reclamás baja a la tarjeta de su pista — arrastralas para ordenarlas y descubrir la palabra. Usá las 4 pistas para adivinar la palabra final, abajo de todo."
-          />
+          <HowToPlayCollapse title={t.howToPlayTitle} body={t.howToPlayBodyGame} />
         )}
       </Box>
 
       {stage === "play" && (
         <VirtualKeyboard onKeyPress={handleKeyInput} open={keyboardOpen} onClose={() => setKeyboardOpen(false)} />
       )}
+
+      <Dialog open={rewardModalOpen} onClose={() => setRewardModalOpen(false)}>
+        <Box sx={{ p: 3, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, maxWidth: 320 }}>
+          <MineIcon sx={{ fontSize: 32 }} />
+          <Typography sx={{ fontWeight: 800, textAlign: "center", color: "#333" }}>
+            {t.rewardModalText}
+          </Typography>
+          <Button
+            onClick={handleWatchRewarded}
+            variant="contained"
+            sx={{ backgroundColor: ACCENT, fontWeight: 800, borderRadius: 999, px: 3, py: 1.2, "&:hover": { backgroundColor: "#c0392b" } }}
+          >
+            {t.rewardModalButton}
+          </Button>
+        </Box>
+      </Dialog>
     </Layout>
   );
 }

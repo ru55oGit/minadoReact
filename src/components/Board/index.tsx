@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import ClassicFlagIcon from "../icons/ClassicFlagIcon";
 import MineIcon from "../icons/MineIcon";
 import { MinadoGrid } from "../../game/types";
+import { BEVEL_LIGHT, BEVEL_DARK, HIDDEN_BG, REVEALED_BG, FOUND_BG, EXPLODED_BG, NUMBER_COLORS } from "../boardTheme";
 
 // Réplicas del mástil/bandera y la mina clásicos del buscaminas de
 // Windows (ver icons/ClassicFlagIcon.tsx y icons/MineIcon.tsx) — SVG, no
@@ -11,26 +12,6 @@ import { MinadoGrid } from "../../game/types";
 // igual en cualquier lado, sin depender de qué fuentes tenga instaladas
 // el sistema.
 const CELL_ICON_SX = { fontSize: { xs: 19, sm: 21 } } as const;
-
-// Mismos colores que el buscaminas clásico para los números de celdas
-// simples (cantidad de letras vecinas) — 0 no muestra nada.
-const NUMBER_COLORS: Record<number, string> = {
-  1: "#1565c0", 2: "#2e7d32", 3: "#c62828", 4: "#1a237e",
-  5: "#6d4c41", 6: "#00838f", 7: "#000000", 8: "#616161",
-};
-
-// Mismo bisel 3D de Windows, pero con el rojo/blanco de la app en vez de
-// la escala de grises original.
-const BEVEL_LIGHT = "#ffffff";
-const BEVEL_DARK = "#a83228";
-const HIDDEN_BG = "#e74c3c";
-const REVEALED_BG = "#ffffff";
-const FOUND_BG = "#a6f184";
-// Rojo bien saturado, claramente más brillante que el de las celdas
-// ocultas, para que la celda que explotó salte a la vista de verdad
-// (reporte real: "otro color de fondo, que contraste" — el amarillo
-// anterior quedó pegado por error a esta celda en vez de acá).
-const EXPLODED_BG = "#ff3c3c";
 
 interface BoardProps {
   grid: MinadoGrid;
@@ -54,28 +35,25 @@ export default function Board({ grid, interactive, flagMode, onReveal, onFlag }:
     else onReveal(r, c);
   }
 
-  // PRUEBA VISUAL: look clásico Windows 9x, a ver si se queda o volvemos
-  // al estilo anterior — panel 3D con bisel (claro arriba-izq, oscuro
+  // Look clásico Windows 9x: panel 3D con bisel (claro arriba-izq, oscuro
   // abajo-der) para las celdas ocultas, y hundido (al revés) para las ya
   // reveladas, sin gap entre celdas (el bisel de cada una arma la
-  // separación) y un marco grueso biselado alrededor de todo el tablero.
+  // separación). El marco biselado exterior ya NO vive acá — lo pone el
+  // contenedor compartido en game.tsx, junto con el header, para que
+  // header + grilla se vean como un solo marco continuo ("unido a la
+  // grilla").
   return (
-    <Box
-      sx={{
-        width: { xs: size * 26 + 16, sm: size * 28 + 16 },
-        mx: "auto",
-        p: "8px",
-        backgroundColor: HIDDEN_BG,
-        borderStyle: "solid",
-        borderWidth: "4px",
-        borderTopColor: BEVEL_LIGHT,
-        borderLeftColor: BEVEL_LIGHT,
-        borderRightColor: BEVEL_DARK,
-        borderBottomColor: BEVEL_DARK,
-      }}
-    >
       <Box
         sx={{
+          // 100% del ancho disponible (de padding a padding), no un píxel
+          // fijo por breakpoint — ese valor fijo se calculaba sobre el
+          // ancho de la VENTANA, no el espacio real dentro de la card,
+          // así que en pantallas angostas (Fold 5 cerrado) se desbordaba
+          // hacia un lado, y en pantallas anchas se quedaba corto sin
+          // usar el espacio disponible (reporte real: "la grilla no
+          // queda centrada... se puede hacer dinámica").
+          width: "100%",
+          boxSizing: "border-box",
           display: "grid",
           // minmax(0, 1fr), no solo "1fr": un track "1fr" sin el minmax
           // puede igual crecer por el contenido de UN ítem (su "automatic
@@ -169,6 +147,5 @@ export default function Board({ grid, interactive, flagMode, onReveal, onFlag }:
           }),
         )}
       </Box>
-    </Box>
   );
 }

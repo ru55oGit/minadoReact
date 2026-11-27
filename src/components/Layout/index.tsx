@@ -7,6 +7,7 @@ import ListItem from "@mui/material/ListItem";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,13 +19,13 @@ interface LayoutProps {
 // Portado de enroscaloReact/src/components/Layout — mismo esqueleto
 // (raíz fija a 480px en desktop vía Container, header fijo con flecha en
 // /game y hamburguesa en el resto, drawer, lluvia de emojis de fondo,
-// footer). Sin i18n (Minado por ahora es un solo idioma) — todo el texto
-// que ahí venía de `t.xxx` queda hardcodeado en español directo.
+// footer).
 const RAIN_EMOJIS = ["💣", "💥", "🚩", "✅", "🔍", "💎", "⭐", "🧨"];
 
 const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRightText, onBack }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const showHeader = location.pathname !== "/";
   const canvasRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -129,7 +130,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRigh
             <Box
               sx={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", zIndex: 3, cursor: "pointer" }}
               onClick={() => (onBack ? onBack() : navigate(-1))}
-              aria-label="Volver"
+              aria-label={t.ariaBack}
             >
               <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
                 <path d="M26 6L14 19L26 32" stroke="#e74c3c" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
@@ -139,7 +140,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRigh
             <Box
               sx={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", zIndex: 3, cursor: "pointer" }}
               onClick={handleMenuToggle}
-              aria-label="Menú"
+              aria-label={t.ariaMenu}
             >
               <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
                 <rect y="8" width="38" height="4" rx="2" fill="#e74c3c" />
@@ -202,7 +203,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRigh
         <Box component="footer" sx={{ py: 2, textAlign: "center", fontSize: 16, position: "relative", zIndex: 1 }}>
           © {new Date().getFullYear()} Minado ·{" "}
           <a href="/privacidad" style={{ color: "inherit", textDecoration: "underline" }}>
-            Política de Privacidad
+            {t.menuPrivacy}
           </a>
         </Box>
       )}
@@ -223,7 +224,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRigh
                 onClick={() => handleMenuNavigation("/")}
                 sx={{ px: 3, py: 2, backgroundColor: "#fff", borderBottom: "1px solid #e0e0e0", "&:hover": { backgroundColor: "#f5f5f5" } }}
               >
-                <ListItemText primary="Inicio" primaryTypographyProps={{ fontSize: 22, fontWeight: 500, color: "#e74c3c" }} />
+                <ListItemText primary={t.menuHome} primaryTypographyProps={{ fontSize: 22, fontWeight: 500, color: "#e74c3c" }} />
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
@@ -231,7 +232,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRigh
                 onClick={() => handleMenuNavigation("/game")}
                 sx={{ px: 3, py: 2, backgroundColor: "#fff", borderBottom: "1px solid #e0e0e0", "&:hover": { backgroundColor: "#f5f5f5" } }}
               >
-                <ListItemText primary="Jugar" primaryTypographyProps={{ fontSize: 22, fontWeight: 500, color: "#e74c3c" }} />
+                <ListItemText primary={t.menuPlay} primaryTypographyProps={{ fontSize: 22, fontWeight: 500, color: "#e74c3c" }} />
               </ListItemButton>
             </ListItem>
             <ListItem disablePadding>
@@ -239,7 +240,7 @@ const Layout: React.FC<LayoutProps> = ({ children, showFooter = true, headerRigh
                 onClick={() => handleMenuNavigation("/privacidad")}
                 sx={{ px: 3, py: 2, backgroundColor: "#fff", borderBottom: "1px solid #e0e0e0", "&:hover": { backgroundColor: "#f5f5f5" } }}
               >
-                <ListItemText primary="Política de Privacidad" primaryTypographyProps={{ fontSize: 22, fontWeight: 500, color: "#e74c3c" }} />
+                <ListItemText primary={t.menuPrivacy} primaryTypographyProps={{ fontSize: 22, fontWeight: 500, color: "#e74c3c" }} />
               </ListItemButton>
             </ListItem>
           </List>

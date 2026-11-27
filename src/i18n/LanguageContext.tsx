@@ -1,0 +1,78 @@
+import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { Translation, translations, SupportedLanguage } from "./translations";
+
+interface LanguageContextType {
+  currentLanguage: SupportedLanguage;
+  setLanguage: (language: SupportedLanguage) => void;
+  t: Translation;
+  availableLanguages: Array<{ code: SupportedLanguage; name: string; flag: string }>;
+}
+
+const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+
+const LANGUAGE_STORAGE_KEY = "minado_language";
+
+export const availableLanguages = [
+  { code: "es" as SupportedLanguage, name: "Español", flag: "🇦🇷" },
+  { code: "en" as SupportedLanguage, name: "English", flag: "🇺🇸" },
+  { code: "pt" as SupportedLanguage, name: "Português", flag: "🇧🇷" },
+];
+
+interface LanguageProviderProps {
+  children: ReactNode;
+}
+
+// Portado de enroscaloReact/src/i18n/LanguageContext.tsx — misma
+// prioridad: ?lang= de la URL (así el hub puede linkear directo a un
+// idioma) > guardado en localStorage > español por default.
+export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) => {
+  const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>("es");
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  useEffect(() => {
+    if (hasInitialized) return;
+
+    const urlLang = new URLSearchParams(window.location.search).get("lang") as SupportedLanguage;
+    if (urlLang && translations[urlLang]) {
+      setCurrentLanguage(urlLang);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, urlLang);
+      setHasInitialized(true);
+      return;
+    }
+
+    const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY) as SupportedLanguage;
+    if (savedLanguage && translations[savedLanguage]) {
+      setCurrentLanguage(savedLanguage);
+    }
+    setHasInitialized(true);
+  }, [hasInitialized]);
+
+  const setLanguage = (language: SupportedLanguage) => {
+    setCurrentLanguage(language);
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  };
+
+  useEffect(() => {
+    if (!hasInitialized) return;
+    const t = translations[currentLanguage];
+    document.title = t.pageTitle;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", t.pageDescription);
+  }, [currentLanguage, hasInitialized]);
+
+  const contextValue: LanguageContextType = {
+    currentLanguage,
+    setLanguage,
+    t: translations[currentLanguage],
+    availableLanguages,
+  };
+
+  return <LanguageContext.Provider value={contextValue}>{children}</LanguageContext.Provider>;
+};
+
+export const useLanguage = (): LanguageContextType => {
+  const context = useContext(LanguageContext);
+  if (!context) {
+    throw new Error("useLanguage must be used within a LanguageProvider");
+  }
+  return context;
+};

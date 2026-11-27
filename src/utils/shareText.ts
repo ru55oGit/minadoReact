@@ -15,8 +15,9 @@ export function gridToShareLines(grid: MinadoGrid): string[] {
   return grid.map((row) => row.map(cellEmoji).join(""));
 }
 
-export function buildShareText(grids: MinadoGrid[], solvedFinal: boolean): string {
-  const header = `Minado${solvedFinal ? " ✅" : " ❌"}`;
+export function buildShareText(grids: MinadoGrid[], solvedFinal: boolean, gameNumber?: number): string {
+  const label = gameNumber ? `Minado #${gameNumber}` : "Minado";
+  const header = `${label}${solvedFinal ? " ✅" : " ❌"}`;
   const boards = grids.map((grid) => gridToShareLines(grid).join("\n")).join("\n\n");
   return `${header}\n\n${boards}`;
 }

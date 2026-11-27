@@ -1,6 +1,7 @@
 import Box from "@mui/material/Box";
 import KeyboardHideRoundedIcon from "@mui/icons-material/KeyboardHideRounded";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useLanguage } from "../../i18n/LanguageContext";
 
 interface VirtualKeyboardProps {
   onKeyPress: (key: string) => void;
@@ -14,7 +15,8 @@ interface VirtualKeyboardProps {
 }
 
 const ROW_1 = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"];
-const ROW_2 = ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ"];
+const ROW_2_ES = ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ"];
+const ROW_2_LATIN = ["A", "S", "D", "F", "G", "H", "J", "K", "L"];
 const ROW_3 = ["Z", "X", "C", "V", "B", "N", "M"];
 
 const keyButtonSx = {
@@ -40,6 +42,8 @@ const keyButtonSx = {
 // teclado físico vía usePhysicalKeyboard, que no depende de este `open`).
 export default function VirtualKeyboard({ onKeyPress, open, onClose }: VirtualKeyboardProps) {
   const isMobile = useIsMobile();
+  const { t, currentLanguage } = useLanguage();
+  const row2 = currentLanguage === "es" ? ROW_2_ES : ROW_2_LATIN;
   if (!isMobile || !open) return null;
 
   return (
@@ -64,7 +68,7 @@ export default function VirtualKeyboard({ onKeyPress, open, onClose }: VirtualKe
           ))}
         </Box>
         <Box sx={{ display: "flex", justifyContent: "center", gap: "2px" }}>
-          {ROW_2.map((letter) => (
+          {row2.map((letter) => (
             <Box key={letter} component="button" type="button" onClick={() => onKeyPress(letter)} sx={keyButtonSx}>
               {letter}
             </Box>
@@ -75,7 +79,7 @@ export default function VirtualKeyboard({ onKeyPress, open, onClose }: VirtualKe
             component="button"
             type="button"
             onClick={onClose}
-            aria-label="Cerrar teclado"
+            aria-label={t.ariaCloseKeyboard}
             sx={{ ...keyButtonSx, flex: 1.5, backgroundColor: "#e74c3c", borderColor: "#c0392b" }}
           >
             <KeyboardHideRoundedIcon sx={{ fontSize: 18 }} />
@@ -89,7 +93,7 @@ export default function VirtualKeyboard({ onKeyPress, open, onClose }: VirtualKe
             component="button"
             type="button"
             onClick={() => onKeyPress("{bksp}")}
-            aria-label="Borrar"
+            aria-label={t.ariaBackspace}
             sx={{ ...keyButtonSx, flex: 1.5, backgroundColor: "#e74c3c", borderColor: "#c0392b" }}
           >
             ⌫
